@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/krakendio/httpcache"
+	"github.com/davron112/httpcache"
 
-	"github.com/luraproject/lura/v2/config"
-	"github.com/luraproject/lura/v2/transport/http/client"
+	"github.com/davron112/lura/v2/config"
+	"github.com/davron112/lura/v2/transport/http/client"
 )
 
 type Cache interface {

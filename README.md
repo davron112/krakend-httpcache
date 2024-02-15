@@ -10,10 +10,10 @@ This package exposes two simple factories capable to create a instances of the `
 	import 	(
 		"context"
 		"net/http"
-		"github.com/luraproject/lura/v2/config"
-		"github.com/luraproject/lura/v2/proxy"
-		"github.com/luraproject/lura/v2/transport/http/client"
-		"github.com/krakendio/krakend-httpcache/v2"
+		"github.com/davron112/lura/v2/config"
+		"github.com/davron112/lura/v2/proxy"
+		"github.com/davron112/lura/v2/transport/http/client"
+		"github.com/davron112/krakend-httpcache/v2"
 	)
 
 	requestExecutorFactory := func(cfg *config.Backend) proxy.HTTPRequestExecutor {
