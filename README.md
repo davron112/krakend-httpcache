@@ -1,7 +1,7 @@
 Krakend HTTP Cache
 ====
 
-A cached http client for the [KrakenD](github.com/devopsfaith/krakend) framework
+A cached http client for the [KrakenD](github.com/davron112/krakend) framework
 
 ## Using it
 
@@ -10,14 +10,13 @@ This package exposes two simple factories capable to create a instances of the `
 	import 	(
 		"context"
 		"net/http"
-		"github.com/davron112/lura/v2/config"
-		"github.com/davron112/lura/v2/proxy"
-		"github.com/davron112/lura/v2/transport/http/client"
-		"github.com/davron112/krakend-httpcache/v2"
+		"github.com/davron112/lura/config"
+		"github.com/davron112/lura/proxy"
+		"github.com/davron112/krakend-httpcache"
 	)
 
 	requestExecutorFactory := func(cfg *config.Backend) proxy.HTTPRequestExecutor {
-		clientFactory := httpcache.NewHTTPClient(cfg, client.NewHTTPClient)
+		clientFactory := httpcache.NewHTTPClient(cfg)
 		return func(ctx context.Context, req *http.Request) (*http.Response, error) {
 			return clientFactory(ctx).Do(req.WithContext(ctx))
 		}

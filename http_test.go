@@ -4,185 +4,47 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync/atomic"
 	"testing"
-	"time"
 
-	"github.com/davron112/httpcache"
-	"github.com/davron112/lura/v2/config"
-	"github.com/davron112/lura/v2/encoding"
-	"github.com/davron112/lura/v2/proxy"
-	"github.com/davron112/lura/v2/transport/http/client"
+	"github.com/davron112/lura/config"
+	"github.com/davron112/lura/encoding"
+	"github.com/davron112/lura/proxy"
 )
 
-var maxRequests = 100
-
-func TestClient_shared(t *testing.T) {
-	globalCache = httpcache.NewMemoryCache()
-	defer func() { globalCache = nil }()
-
-	cfg := &config.Backend{
-		Decoder: encoding.JSONDecoder,
-		ExtraConfig: map[string]interface{}{
-			Namespace: map[string]interface{}{
-				"shared": true,
-			},
-		},
-	}
-
-	b := newBackend(300)
-	defer b.Close()
-
-	testClient(t, cfg, b.URL())
-	testClient(t, cfg, b.URL())
-	testClient(t, cfg, b.URL())
-	testClient(t, cfg, b.URL())
-
-	if hits := b.Count(); hits != 1 {
-		t.Errorf("unexpected number of hits. got: %d, want: 1", hits)
-	}
+func TestClient_ok(t *testing.T) {
+	testCacheSystem(t, func(t *testing.T, URL string) {
+		testClient(t, sampleCfg, URL)
+	}, 1)
 }
 
-func TestClient_refresh(t *testing.T) {
-	globalCache = httpcache.NewMemoryCache()
-	defer func() { globalCache = nil }()
-
-	cfg := &config.Backend{
-		Decoder: encoding.JSONDecoder,
-		ExtraConfig: map[string]interface{}{
-			Namespace: map[string]interface{}{
-				"shared": true,
-			},
-		},
-	}
-
-	b := newBackend(1)
-	defer b.Close()
-
-	testClient(t, cfg, b.URL())
-	<-time.After(1500 * time.Millisecond)
-	testClient(t, cfg, b.URL())
-	<-time.After(1500 * time.Millisecond)
-	testClient(t, cfg, b.URL())
-
-	if hits := b.Count(); hits != 3 {
-		t.Errorf("unexpected number of hits. got: %d, want: 3", hits)
-	}
-}
-
-func TestClient_dedicated(t *testing.T) {
-	globalCache = httpcache.NewMemoryCache()
-	defer func() { globalCache = nil }()
-
-	b := newBackend(300)
-	defer b.Close()
-
-	{
-		cfg := &config.Backend{
-			Decoder: encoding.JSONDecoder,
-			ExtraConfig: map[string]interface{}{
-				Namespace: false,
-			},
-		}
-
-		testClient(t, cfg, b.URL())
-
-		if hits := b.Count(); hits != 1 {
-			t.Errorf("unexpected number of hits. got: %d, want: 1", hits)
-		}
-	}
-
-	{
-		cfg := &config.Backend{
-			Decoder: encoding.JSONDecoder,
-			ExtraConfig: map[string]interface{}{
-				Namespace: map[string]interface{}{},
-			},
-		}
-
-		testClient(t, cfg, b.URL())
-
-		if hits := b.Count(); hits != 2 {
-			t.Errorf("unexpected number of hits. got: %d, want: 2", hits)
-		}
-	}
-}
-
-func TestClient_noCache(t *testing.T) {
-	globalCache = httpcache.NewMemoryCache()
-	defer func() { globalCache = nil }()
-
-	b := newBackend(300)
-	defer b.Close()
-
+func TestClient_ko(t *testing.T) {
 	cfg := &config.Backend{
 		Decoder:     encoding.JSONDecoder,
 		ExtraConfig: map[string]interface{}{},
 	}
-
-	testClient(t, cfg, b.URL())
-
-	if hits := b.Count(); hits != uint64(maxRequests) {
-		t.Errorf("unexpected number of hits. got: %d, want: %d", hits, uint64(maxRequests))
-	}
-}
-
-func TestClient_backendFactory(t *testing.T) {
-	globalCache = httpcache.NewMemoryCache()
-	defer func() { globalCache = nil }()
-
-	b := newBackend(300)
-	defer b.Close()
-
-	sampleCfg := &config.Backend{
-		Decoder: encoding.JSONDecoder,
-		ExtraConfig: map[string]interface{}{
-			Namespace: map[string]interface{}{},
-		},
-	}
-
-	httpClientFactory := NewHTTPClient(sampleCfg, client.NewHTTPClient)
-	backendFactory := proxy.CustomHTTPProxyFactory(httpClientFactory)
-	backendProxy := backendFactory(sampleCfg)
-	ctx := context.Background()
-	URL, _ := url.Parse(b.URL())
-
-	for i := 0; i < maxRequests; i++ {
-		req := &proxy.Request{
-			Method: "GET",
-			URL:    URL,
-			Body:   io.NopCloser(bytes.NewBufferString("")),
-		}
-		resp, err := backendProxy(ctx, req)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if !resp.IsComplete {
-			t.Error("incomplete response:", *resp)
-			return
-		}
-	}
-
-	if hits := b.Count(); hits != 1 {
-		t.Errorf("unexpected number of hits. got: %d, want: %d", hits, 1)
-	}
+	testCacheSystem(t, func(t *testing.T, URL string) {
+		testClient(t, cfg, URL)
+	}, 100)
 }
 
 func testClient(t *testing.T, cfg *config.Backend, URL string) {
-	c := NewHTTPClient(cfg, client.NewHTTPClient)(context.Background())
+	clientFactory := NewHTTPClient(cfg)
+	client := clientFactory(context.Background())
 
-	for i := 0; i < maxRequests; i++ {
-		resp, err := c.Get(URL)
+	for i := 0; i < 100; i++ {
+		resp, err := client.Get(URL)
 		if err != nil {
+			log.Println(err)
 			t.Error(err)
 			return
 		}
-		response, err := io.ReadAll(resp.Body)
+		response, err := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			t.Error(err)
@@ -194,34 +56,55 @@ func testClient(t *testing.T, cfg *config.Backend, URL string) {
 	}
 }
 
-const statusOKMsg = `{"status": "ok"}`
+func TestBackendFactory(t *testing.T) {
+	testCacheSystem(t, func(t *testing.T, testURL string) {
+		backendFactory := BackendFactory(sampleCfg)
+		backendProxy := backendFactory(sampleCfg)
+		ctx := context.Background()
+		URL, _ := url.Parse(testURL)
 
-func newBackend(ttl int) backend {
-	var ops uint64
-	return backend{
-		server: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			atomic.AddUint64(&ops, 1)
-			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", ttl))
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, statusOKMsg)
-		})),
-		ops: &ops,
+		for i := 0; i < 100; i++ {
+			req := &proxy.Request{
+				Method: "GET",
+				URL:    URL,
+				Body:   ioutil.NopCloser(bytes.NewBufferString("")),
+			}
+			resp, err := backendProxy(ctx, req)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if !resp.IsComplete {
+				t.Error("incomplete response:", *resp)
+			}
+		}
+	}, 1)
+}
+
+var (
+	statusOKMsg = `{"status": "ok"}`
+	sampleCfg   = &config.Backend{
+		Decoder: encoding.JSONDecoder,
+		ExtraConfig: map[string]interface{}{
+			Namespace: map[string]interface{}{},
+		},
 	}
-}
+)
 
-type backend struct {
-	server *httptest.Server
-	ops    *uint64
-}
+func testCacheSystem(t *testing.T, f func(*testing.T, string), expected uint64) {
+	var ops uint64 = 0
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddUint64(&ops, 1)
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, statusOKMsg)
+	}))
+	defer testServer.Close()
 
-func (b backend) Close() {
-	b.server.Close()
-}
+	f(t, testServer.URL)
 
-func (b backend) Count() uint64 {
-	return atomic.LoadUint64(b.ops)
-}
-
-func (b backend) URL() string {
-	return b.server.URL
+	opsFinal := atomic.LoadUint64(&ops)
+	if opsFinal != expected {
+		t.Errorf("the server should not being hited just %d time(s). Total requests: %d\n", expected, opsFinal)
+	}
 }
